@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Register · SkillConnect</title>
+    <link rel="stylesheet" href="/css/style.css" />
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="/">SkillConnect</a>
+      <nav></nav>
+    </header>
+    <main>
+      <section class="card">
+        <h1>Create an account</h1>
+        <form id="register-form">
+          <label>
+            Full name
+            <input type="text" name="full_name" required minlength="2" />
+          </label>
+          <label>
+            Email
+            <input type="email" name="email" required />
+          </label>
+          <label>
+            Password (min 8 characters)
+            <input type="password" name="password" required minlength="8" />
+          </label>
+          <label>
+            Phone (optional)
+            <input type="text" name="phone" />
+          </label>
+          <label>
+            I am a
+            <select name="role" required>
+              <option value="CUSTOMER">Customer</option>
+              <option value="PROVIDER">Service provider</option>
+            </select>
+          </label>
+          <p id="form-error" class="form-error"></p>
+          <button type="submit">Register</button>
+        </form>
+        <p>Already have an account? <a href="/login.html">Login</a></p>
+      </section>
+    </main>
+    <script src="/js/app.js"></script>
+  </body>
+</html>
