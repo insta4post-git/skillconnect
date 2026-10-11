@@ -8,8 +8,10 @@ from sqlalchemy import inspect
 
 from app.database import check_database_connection, engine
 from app import models  # noqa: F401
-from app.routers import auth
+from app.routers import auth, providers, services, users
+
 from app.security import require_admin
+from app.storage import UPLOAD_DIR
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
 
@@ -18,6 +20,10 @@ app = FastAPI(
     description="Location-based service marketplace (MVP)",
     version="0.1.0",
 )
+app.include_router(providers.router)
+app.include_router(services.router)
+app.include_router(users.router)
+app.include_router(auth.router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,6 +34,9 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(users.router)
+app.include_router(providers.router)
+app.include_router(services.router)
 
 
 @app.get("/api/health")
@@ -42,7 +51,7 @@ def health():
 
 
 @app.get("/api/db/tables")
-def list_tables(_user=Depends(require_admin)):
+def list_tables(_admin=Depends(require_admin)):
     db_ok, db_message = check_database_connection()
     if not db_ok:
         return {"database_connected": False, "tables": [], "message": db_message}
@@ -54,4 +63,6 @@ def list_tables(_user=Depends(require_admin)):
     }
 
 
+# Uploaded profile photos. This mount must come BEFORE the "/" frontend mount.
+app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")

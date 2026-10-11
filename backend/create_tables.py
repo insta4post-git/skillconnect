@@ -3,6 +3,8 @@
 Run from the backend folder (venv active):
     python create_database.py
     python create_tables.py
+
+Safe to run again: it only adds what is missing.
 """
 
 from sqlalchemy import inspect, text
@@ -22,12 +24,50 @@ def migrate_user_roles():
         )
 
 
+def add_column_if_missing(table, column, definition):
+    """create_all() never changes existing tables, so we add new columns ourselves."""
+    existing = {col["name"] for col in inspect(engine).get_columns(table)}
+    if column in existing:
+        return
+    with engine.begin() as connection:
+        connection.execute(
+            text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+        )
+    print(f"Added column {table}.{column}")
+
+
+def migrate_step4():
+    """Step 4: profile columns on users and provider_profiles."""
+    add_column_if_missing("users", "bio", "TEXT NULL")
+    add_column_if_missing("users", "photo_url", "VARCHAR(500) NULL")
+    add_column_if_missing("users", "location_id", "INT NULL")
+    add_column_if_missing("provider_profiles", "qualification", "VARCHAR(255) NULL")
+    add_column_if_missing("provider_profiles", "working_area", "VARCHAR(255) NULL")
+    add_column_if_missing("provider_profiles", "pricing_info", "VARCHAR(500) NULL")
+
+    has_location_fk = any(
+        fk["constrained_columns"] == ["location_id"]
+        for fk in inspect(engine).get_foreign_keys("users")
+    )
+    if not has_location_fk:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "ALTER TABLE users ADD CONSTRAINT fk_users_location "
+                    "FOREIGN KEY (location_id) REFERENCES locations (id) "
+                    "ON DELETE SET NULL"
+                )
+            )
+        print("Added foreign key users.location_id -> locations.id")
+
+
 def main():
     with engine.connect() as connection:
         connection.execute(text("SELECT 1"))
 
     Base.metadata.create_all(bind=engine)
     migrate_user_roles()
+    migrate_step4()
 
     inspector = inspect(engine)
     tables = inspector.get_table_names()

@@ -63,11 +63,18 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     role = Column(Enum(UserRole), nullable=False)
     phone = Column(String(20), nullable=True)
+    # Step 4: profile fields shared by every user (customers and providers)
+    bio = Column(Text, nullable=True)
+    photo_url = Column(String(500), nullable=True)
+    location_id = Column(
+        Integer, ForeignKey("locations.id", ondelete="SET NULL"), nullable=True
+    )
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
 
+    location = relationship("Location", back_populates="users")
     provider_profile = relationship(
         "ProviderProfile",
         back_populates="user",
@@ -105,6 +112,7 @@ class Location(Base):
     pincode = Column(String(10), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
+    users = relationship("User", back_populates="location")
     providers = relationship("ProviderProfile", back_populates="location")
     requests = relationship("ServiceRequest", back_populates="location")
 
@@ -146,6 +154,8 @@ class ProviderProfile(Base):
         unique=True,
         nullable=False,
     )
+    # Step 4: photo and location now live on the users table for everyone.
+    # These two columns are unused for now and can be removed in Step 14.
     location_id = Column(
         Integer, ForeignKey("locations.id", ondelete="SET NULL"), nullable=True
     )
@@ -154,6 +164,10 @@ class ProviderProfile(Base):
     experience_years = Column(Integer, nullable=True)
     service_mode = Column(Enum(ServiceMode), nullable=False, default=ServiceMode.BOTH)
     availability_notes = Column(String(255), nullable=True)
+    # Step 4: extra provider details
+    qualification = Column(String(255), nullable=True)
+    working_area = Column(String(255), nullable=True)
+    pricing_info = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
