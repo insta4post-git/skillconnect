@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
 
 from app.models import UserRole
 
@@ -12,6 +13,12 @@ class UserRegister(BaseModel):
     password: str = Field(min_length=8, max_length=72)
     role: Literal["CUSTOMER", "PROVIDER"]
     phone: Optional[str] = Field(default=None, max_length=20)
+    @field_validator("password")
+    @classmethod
+    def password_fits_bcrypt(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("Password is too long (max 72 bytes).")
+        return value
 
 
 class UserLogin(BaseModel):

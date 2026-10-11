@@ -9,7 +9,7 @@ from sqlalchemy import inspect
 from app.database import check_database_connection, engine
 from app import models  # noqa: F401
 from app.routers import auth
-from app.security import get_current_user
+from app.security import require_admin
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
 
@@ -42,7 +42,7 @@ def health():
 
 
 @app.get("/api/db/tables")
-def list_tables(_user=Depends(get_current_user)):
+def list_tables(_user=Depends(require_admin)):
     db_ok, db_message = check_database_connection()
     if not db_ok:
         return {"database_connected": False, "tables": [], "message": db_message}

@@ -13,10 +13,11 @@ from app.models import User, UserRole
 
 load_dotenv()
 
-SECRET_KEY = os.getenv("SECRET_KEY", "change_this_to_a_random_secret")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 12
-
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+SECRET_KEY = os.getenv("SECRET_KEY", "").strip()
+if len(SECRET_KEY) < 32 or SECRET_KEY == "change_this_to_a_random_secret":
+    raise RuntimeError("Set a random SECRET_KEY (32+ chars) in backend/.env")
+ALGORITHM="HS256"
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
@@ -25,7 +26,10 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+    try:
+        return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
+    except ValueError:
+        return False
 
 
 def create_access_token(user: User) -> str:
@@ -79,10 +83,17 @@ def get_current_user(
     return user
 
 
-def require_admin(current_user: User = Depends(get_current_user)) -> User:
-    if current_user.role != UserRole.ADMIN:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required.",
-        )
-    return current_user
+def require_roles(*allowed: UserRole):
+    def checker(current_user: User = Depends(get_current_user)) -> User:
+        if current_user.role not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to do this.",
+            )
+        return current_user
+    return checker
+
+
+require_admin = require_roles(UserRole.ADMIN)
+require_provider = require_roles(UserRole.PROVIDER)
+require_customer = require_roles(UserRole.CUSTOMER)
