@@ -125,7 +125,7 @@ class Category(Base):
     description = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-    skills = relationship("Skill", back_populates="category")
+    skills = relationship("Skill", back_populates="category", order_by="Skill.name")
 
 
 class Skill(Base):
@@ -137,6 +137,10 @@ class Skill(Base):
     )
     name = Column(String(80), unique=True, nullable=False, index=True)
     description = Column(String(255), nullable=True)
+    # Step 5: NULL = official skill (from seed_skills.py), otherwise the provider who added it
+    created_by_id = Column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     category = relationship("Category", back_populates="skills")

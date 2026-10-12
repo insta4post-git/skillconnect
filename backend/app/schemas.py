@@ -141,6 +141,29 @@ class CategoryOut(BaseModel):
     skills: list[SkillOut] = []
 
 
+# ------------------------------------------ skill search and add (Step 5)
+
+
+class SkillDetailOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    category_id: int
+    category_name: str
+    is_custom: bool  # True = added by a provider, False = official skill
+
+
+class SkillCreate(BaseModel):
+    """A provider suggests a new skill inside an existing category."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    category_id: int = Field(ge=1)
+    # letters (any language), digits, spaces and & / . ' + -
+    name: str = Field(min_length=2, max_length=60, pattern=r"^[\w][\w &/.'+\-]*$")
+
+
 # ------------------------------------------------ provider profile (Step 4)
 
 

@@ -1,10 +1,13 @@
 from string import capwords
 
-from sqlalchemy.orm import Session
+from sqlalchemy import func, or_
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, contains_eager
 
 from app import schemas
 from app.models import (
     Availability,
+    Category,
     Location,
     ProviderProfile,
     ProviderSkill,
@@ -90,6 +93,68 @@ def update_user_profile(
     db.commit()
     db.refresh(user)
     return user
+
+
+# ------------------------------------------ skill search and add (Step 5)
+
+MAX_CUSTOM_SKILLS_PER_USER = 5
+
+
+def escape_like(text: str) -> str:
+    """Make % and _ typed by the user match literally inside a LIKE search."""
+    return text.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+
+
+def search_skills(
+    db: Session, *, q: str | None, category_id: int | None, limit: int
+) -> list[Skill]:
+    """Skills whose name OR category name contains q, optionally inside one category."""
+    query = db.query(Skill).join(Skill.category).options(contains_eager(Skill.category))
+    if category_id is not None:
+        query = query.filter(Skill.category_id == category_id)
+    q = (q or "").strip()
+    if q:
+        pattern = f"%{escape_like(q)}%"
+        query = query.filter(
+            or_(
+                Skill.name.ilike(pattern, escape="!"),
+                Category.name.ilike(pattern, escape="!"),
+            )
+        )
+    return query.order_by(Category.name, Skill.name).limit(limit).all()
+
+
+def get_or_create_custom_skill(
+    db: Session, *, user: User, category: Category, name: str
+) -> tuple[Skill, bool]:
+    """Return (skill, created). If a skill with this name already exists
+    (any capitalisation) it is returned as it is, in its own category."""
+    name = " ".join(name.split())  # collapse extra spaces
+    existing = db.query(Skill).filter(func.lower(Skill.name) == name.lower()).first()
+    if existing:
+        return existing, False
+
+    added_so_far = db.query(Skill).filter(Skill.created_by_id == user.id).count()
+    if added_so_far >= MAX_CUSTOM_SKILLS_PER_USER:
+        raise ValueError(
+            f"You can add at most {MAX_CUSTOM_SKILLS_PER_USER} new skills. "
+            "Please choose from the existing list."
+        )
+
+    skill = Skill(category_id=category.id, name=name, created_by_id=user.id)
+    db.add(skill)
+    try:
+        db.commit()
+    except IntegrityError:  # someone added the same name a moment ago
+        db.rollback()
+        existing = (
+            db.query(Skill).filter(func.lower(Skill.name) == name.lower()).first()
+        )
+        if existing:
+            return existing, False
+        raise
+    db.refresh(skill)
+    return skill, True
 
 
 # --------------------------------------------- provider profile (Step 4)

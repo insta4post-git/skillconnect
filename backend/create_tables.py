@@ -36,6 +36,22 @@ def add_column_if_missing(table, column, definition):
     print(f"Added column {table}.{column}")
 
 
+def add_foreign_key_if_missing(table, column, constraint, references):
+    """Link table.column to another table's id (ON DELETE SET NULL)."""
+    foreign_keys = inspect(engine).get_foreign_keys(table)
+    if any(fk["constrained_columns"] == [column] for fk in foreign_keys):
+        return
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                f"ALTER TABLE {table} ADD CONSTRAINT {constraint} "
+                f"FOREIGN KEY ({column}) REFERENCES {references} "
+                "ON DELETE SET NULL"
+            )
+        )
+    print(f"Added foreign key {table}.{column} -> {references}")
+
+
 def migrate_step4():
     """Step 4: profile columns on users and provider_profiles."""
     add_column_if_missing("users", "bio", "TEXT NULL")
@@ -44,21 +60,17 @@ def migrate_step4():
     add_column_if_missing("provider_profiles", "qualification", "VARCHAR(255) NULL")
     add_column_if_missing("provider_profiles", "working_area", "VARCHAR(255) NULL")
     add_column_if_missing("provider_profiles", "pricing_info", "VARCHAR(500) NULL")
-
-    has_location_fk = any(
-        fk["constrained_columns"] == ["location_id"]
-        for fk in inspect(engine).get_foreign_keys("users")
+    add_foreign_key_if_missing(
+        "users", "location_id", "fk_users_location", "locations (id)"
     )
-    if not has_location_fk:
-        with engine.begin() as connection:
-            connection.execute(
-                text(
-                    "ALTER TABLE users ADD CONSTRAINT fk_users_location "
-                    "FOREIGN KEY (location_id) REFERENCES locations (id) "
-                    "ON DELETE SET NULL"
-                )
-            )
-        print("Added foreign key users.location_id -> locations.id")
+
+
+def migrate_step5():
+    """Step 5: remember which provider added a custom skill."""
+    add_column_if_missing("skills", "created_by_id", "INT NULL")
+    add_foreign_key_if_missing(
+        "skills", "created_by_id", "fk_skills_created_by", "users (id)"
+    )
 
 
 def main():
@@ -68,6 +80,7 @@ def main():
     Base.metadata.create_all(bind=engine)
     migrate_user_roles()
     migrate_step4()
+    migrate_step5()
 
     inspector = inspect(engine)
     tables = inspector.get_table_names()
