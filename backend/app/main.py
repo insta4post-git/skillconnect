@@ -8,8 +8,7 @@ from sqlalchemy import inspect
 
 from app.database import check_database_connection, engine
 from app import models  # noqa: F401
-from app.routers import auth, providers, services, users
-
+from app.routers import auth, providers, requests, search, services, users
 from app.security import require_admin
 from app.storage import UPLOAD_DIR
 
@@ -20,10 +19,6 @@ app = FastAPI(
     description="Location-based service marketplace (MVP)",
     version="0.1.0",
 )
-app.include_router(providers.router)
-app.include_router(services.router)
-app.include_router(users.router)
-app.include_router(auth.router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,6 +32,8 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(providers.router)
 app.include_router(services.router)
+app.include_router(search.router)
+app.include_router(requests.router)
 
 
 @app.get("/api/health")

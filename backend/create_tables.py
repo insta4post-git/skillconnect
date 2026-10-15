@@ -73,6 +73,16 @@ def migrate_step5():
     )
 
 
+def migrate_step7():
+    """Step 7: long-term request details on service_requests."""
+    add_column_if_missing("service_requests", "start_date", "DATE NULL")
+    add_column_if_missing("service_requests", "end_date", "DATE NULL")
+    add_column_if_missing("service_requests", "working_days", "VARCHAR(80) NULL")
+    add_column_if_missing("service_requests", "start_time", "TIME NULL")
+    add_column_if_missing("service_requests", "end_time", "TIME NULL")
+    add_column_if_missing("service_requests", "address_details", "VARCHAR(255) NULL")
+
+
 def main():
     with engine.connect() as connection:
         connection.execute(text("SELECT 1"))
@@ -81,6 +91,7 @@ def main():
     migrate_user_roles()
     migrate_step4()
     migrate_step5()
+    migrate_step7()
 
     inspector = inspect(engine)
     tables = inspector.get_table_names()

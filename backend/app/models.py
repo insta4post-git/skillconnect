@@ -4,6 +4,7 @@ from datetime import datetime
 from sqlalchemy import (
     CheckConstraint,
     Column,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
@@ -262,6 +263,13 @@ class ServiceRequest(Base):
     scheduled_at = Column(DateTime, nullable=True)
     duration_hours = Column(Numeric(5, 2), nullable=True)
     message = Column(Text, nullable=True)
+    # Step 7: long-term (REGULAR) requests. NON_REGULAR requests leave these empty.
+    start_date = Column(Date, nullable=True)
+    end_date = Column(Date, nullable=True)
+    working_days = Column(String(80), nullable=True)  # e.g. "MONDAY,WEDNESDAY,FRIDAY"
+    start_time = Column(Time, nullable=True)  # daily start
+    end_time = Column(Time, nullable=True)  # daily end
+    address_details = Column(String(255), nullable=True)  # flat / landmark, private
     status = Column(
         Enum(RequestStatus), nullable=False, default=RequestStatus.PENDING, index=True
     )
