@@ -209,6 +209,8 @@ class AvailabilitySlotIn(BaseModel):
 
     @model_validator(mode="after")
     def end_after_start(self):
+        if self.start_time.tzinfo or self.end_time.tzinfo:
+            raise ValueError("Send times without a time zone, like 09:00")
         if self.end_time <= self.start_time:
             raise ValueError("end_time must be later than start_time")
         return self
@@ -346,6 +348,8 @@ class RegularRequestCreate(BaseModel):
 
     @model_validator(mode="after")
     def check_dates_and_times(self):
+        if self.start_time.tzinfo or self.end_time.tzinfo:
+            raise ValueError("Send times without a time zone, like 17:00")
         if self.end_date < self.start_date:
             raise ValueError("end_date must be on or after start_date")
         if (self.end_date - self.start_date).days > MAX_REQUEST_DAYS:
@@ -365,13 +369,16 @@ class RegularRequestCreate(BaseModel):
 
 
 class PartyOut(BaseModel):
-    """Name and photo only. No email or phone is shared at this stage."""
+    """The other side of a request. Email and phone stay empty (null) until the
+    provider has accepted the request; they are then shown to both sides."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     full_name: str
     photo_url: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
 
 
 class RequestOut(BaseModel):
@@ -383,6 +390,7 @@ class RequestOut(BaseModel):
     customer: PartyOut
     provider: PartyOut
     skill: SkillOut
+    scheduled_at: Optional[datetime] = None  # short-term requests
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     working_days: list[WeekDay] = []
@@ -394,3 +402,100 @@ class RequestOut(BaseModel):
     address_details: Optional[str] = None
     details: Optional[str] = None
     created_at: datetime
+    updated_at: Optional[datetime] = None  # last status change
+
+
+# ------------------------------------ short-term / on-demand requests (Step 8)
+
+MIN_NOTICE_MINUTES = 60
+MAX_ADVANCE_DAYS = 90
+MIN_SHORT_HOURS = 0.5
+MAX_SHORT_HOURS = 12
+
+
+class ShortTermRequestCreate(BaseModel):
+    """A customer asks one provider for one-off work, e.g. an electrician
+    tomorrow for 2 hours."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    provider_id: int = Field(ge=1)
+    skill_id: int = Field(ge=1)
+    service_date: date
+    start_time: time  # e.g. "10:00"
+    duration_hours: float = Field(ge=MIN_SHORT_HOURS, le=MAX_SHORT_HOURS)
+    # Leave out to use the location saved in your profile
+    location: Optional[LocationIn] = None
+    address_details: Optional[str] = Field(default=None, max_length=255)
+    details: str = Field(min_length=10, max_length=1000)
+
+    @field_validator("address_details", mode="before")
+    @classmethod
+    def blank_address_to_none(cls, value):
+        return _blank_to_none(value)
+
+    @field_validator("duration_hours")
+    @classmethod
+    def half_hour_steps(cls, value: float) -> float:
+        if (value * 2) % 1 != 0:
+            raise ValueError("duration_hours must be in steps of 0.5 (1, 1.5, 2, ...)")
+        return value
+
+    @model_validator(mode="after")
+    def check_start(self):
+        if self.start_time.tzinfo is not None:
+            raise ValueError("Send the time without a time zone, like 10:00")
+        start = datetime.combine(self.service_date, self.start_time)
+        now = datetime.now()
+        if start < now + timedelta(minutes=MIN_NOTICE_MINUTES):
+            raise ValueError("The service must start at least 1 hour from now")
+        if start > now + timedelta(days=MAX_ADVANCE_DAYS):
+            raise ValueError(f"The service must be within the next {MAX_ADVANCE_DAYS} days")
+        return self
+
+
+# --------------------------------------------------------- messages (Step 10)
+
+MAX_MESSAGE_LENGTH = 1000
+
+
+class MessageCreate(BaseModel):
+    body: str = Field(min_length=1, max_length=MAX_MESSAGE_LENGTH)
+
+    @field_validator("body")
+    @classmethod
+    def body_not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Message cannot be empty.")
+        if len(value) > MAX_MESSAGE_LENGTH:
+            raise ValueError(f"Message can be at most {MAX_MESSAGE_LENGTH} characters.")
+        return value
+
+
+class MessageOut(BaseModel):
+    id: int
+    request_id: int
+    sender_id: int
+    sender_name: str
+    is_mine: bool
+    body: str
+    created_at: datetime  # UTC
+
+
+class ConversationOut(BaseModel):
+    request_id: int
+    request_status: RequestStatus
+    can_send: bool
+    messages: list[MessageOut]
+
+
+class InboxItemOut(BaseModel):
+    request_id: int
+    request_status: RequestStatus
+    skill_name: str
+    other_party: PartyOut  # name and photo only
+    message_count: int
+    last_message: str  # first 100 characters
+    last_message_at: datetime  # UTC
+    last_message_is_mine: bool

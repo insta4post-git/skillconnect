@@ -8,7 +8,7 @@ from sqlalchemy import inspect
 
 from app.database import check_database_connection, engine
 from app import models  # noqa: F401
-from app.routers import auth, providers, requests, search, services, users
+from app.routers import auth, messages, providers, requests, search, services, users
 from app.security import require_admin
 from app.storage import UPLOAD_DIR
 
@@ -34,6 +34,7 @@ app.include_router(providers.router)
 app.include_router(services.router)
 app.include_router(search.router)
 app.include_router(requests.router)
+app.include_router(messages.router)
 
 
 @app.get("/api/health")

@@ -1,4 +1,4 @@
-from datetime import time
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from string import capwords
 
@@ -11,6 +11,7 @@ from app.models import (
     Availability,
     Category,
     Location,
+    Message,
     ProviderProfile,
     ProviderSkill,
     RequestServiceMode,
@@ -465,6 +466,20 @@ def find_overlapping_regular_request(
     )
 
 
+def resolve_request_location(
+    db: Session, customer: User, location_in: schemas.LocationIn | None
+) -> Location:
+    """The location typed in the request, or else the one saved in the profile."""
+    if location_in is not None:
+        return get_or_create_location(
+            db,
+            city=location_in.city,
+            area=location_in.area,
+            pincode=location_in.pincode,
+        )
+    return customer.location  # the router already checked it exists
+
+
 def create_regular_request(
     db: Session,
     *,
@@ -472,15 +487,7 @@ def create_regular_request(
     provider: User,
     data: schemas.RegularRequestCreate,
 ) -> ServiceRequest:
-    if data.location is not None:
-        location = get_or_create_location(
-            db,
-            city=data.location.city,
-            area=data.location.area,
-            pincode=data.location.pincode,
-        )
-    else:
-        location = customer.location  # the router already checked it exists
+    location = resolve_request_location(db, customer, data.location)
     request = ServiceRequest(
         customer_id=customer.id,
         provider_id=provider.id,
@@ -503,6 +510,53 @@ def create_regular_request(
     return request
 
 
+def find_same_day_short_term_request(
+    db: Session, *, customer: User, provider_id: int, skill_id: int, day: date
+) -> ServiceRequest | None:
+    """An open (pending or accepted) short-term request for the same provider
+    and skill on the same calendar day."""
+    day_start = datetime.combine(day, time.min)
+    return (
+        db.query(ServiceRequest)
+        .filter(
+            ServiceRequest.customer_id == customer.id,
+            ServiceRequest.provider_id == provider_id,
+            ServiceRequest.skill_id == skill_id,
+            ServiceRequest.service_mode == RequestServiceMode.NON_REGULAR,
+            ServiceRequest.status.in_([RequestStatus.PENDING, RequestStatus.ACCEPTED]),
+            ServiceRequest.scheduled_at >= day_start,
+            ServiceRequest.scheduled_at < day_start + timedelta(days=1),
+        )
+        .first()
+    )
+
+
+def create_short_term_request(
+    db: Session,
+    *,
+    customer: User,
+    provider: User,
+    data: schemas.ShortTermRequestCreate,
+) -> ServiceRequest:
+    location = resolve_request_location(db, customer, data.location)
+    request = ServiceRequest(
+        customer_id=customer.id,
+        provider_id=provider.id,
+        skill_id=data.skill_id,
+        location_id=location.id,
+        service_mode=RequestServiceMode.NON_REGULAR,
+        scheduled_at=datetime.combine(data.service_date, data.start_time),
+        duration_hours=Decimal(str(data.duration_hours)),
+        address_details=data.address_details,
+        message=data.details,
+        status=RequestStatus.PENDING,
+    )
+    db.add(request)
+    db.commit()
+    db.refresh(request)
+    return request
+
+
 def _request_query(db: Session):
     return db.query(ServiceRequest).options(
         joinedload(ServiceRequest.customer),
@@ -513,7 +567,11 @@ def _request_query(db: Session):
 
 
 def list_my_requests(
-    db: Session, user: User, status: RequestStatus | None = None, limit: int = 100
+    db: Session,
+    user: User,
+    status: RequestStatus | None = None,
+    page: int = 1,
+    page_size: int = 20,
 ) -> list[ServiceRequest]:
     """Customers see the requests they sent, providers the ones they received."""
     column = (
@@ -526,7 +584,8 @@ def list_my_requests(
         query = query.filter(ServiceRequest.status == status)
     return (
         query.order_by(ServiceRequest.created_at.desc(), ServiceRequest.id.desc())
-        .limit(limit)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
         .all()
     )
 
@@ -548,20 +607,33 @@ def get_request_for_party(
     )
 
 
+def party_dict(user, show_contact: bool) -> dict:
+    """Name and photo always; email and phone only when show_contact is True."""
+    return {
+        "id": user.id,
+        "full_name": user.full_name,
+        "photo_url": user.photo_url,
+        "email": user.email if show_contact else None,
+        "phone": user.phone if show_contact else None,
+    }
+
+
 def request_out(request) -> schemas.RequestOut:
     """Build the API response. No email or phone is included."""
     days = split_days(request.working_days)
     total = None
     if request.start_date and request.end_date and days:
         total = schemas.count_sessions(request.start_date, request.end_date, days)
+    show_contact = request.status in (RequestStatus.ACCEPTED, RequestStatus.COMPLETED)
     return schemas.RequestOut.model_validate(
         {
             "id": request.id,
             "status": request.status,
             "service_mode": request.service_mode,
-            "customer": request.customer,
-            "provider": request.provider,
+            "customer": party_dict(request.customer, show_contact),
+            "provider": party_dict(request.provider, show_contact),
             "skill": request.skill,
+            "scheduled_at": request.scheduled_at,
             "start_date": request.start_date,
             "end_date": request.end_date,
             "working_days": days,
@@ -577,6 +649,202 @@ def request_out(request) -> schemas.RequestOut:
             "address_details": request.address_details,
             "details": request.message,
             "created_at": request.created_at,
+            "updated_at": request.updated_at,
         },
         from_attributes=True,
+    )
+
+
+# ----------------------------------------- request status changes (Step 9)
+
+
+class RequestActionError(Exception):
+    """A status change that is not allowed. The router turns it into an HTTP error."""
+
+    def __init__(self, status_code: int, detail: str):
+        super().__init__(detail)
+        self.status_code = status_code
+        self.detail = detail
+
+
+# action -> (who may do it, statuses it can start from, new status, past tense)
+REQUEST_ACTIONS = {
+    "accept": ("provider", (RequestStatus.PENDING,), RequestStatus.ACCEPTED, "accepted"),
+    "reject": ("provider", (RequestStatus.PENDING,), RequestStatus.REJECTED, "rejected"),
+    "complete": ("provider", (RequestStatus.ACCEPTED,), RequestStatus.COMPLETED, "completed"),
+    "cancel": (
+        "customer",
+        (RequestStatus.PENDING, RequestStatus.ACCEPTED),
+        RequestStatus.CANCELLED,
+        "cancelled",
+    ),
+}
+
+
+def request_timing(request, now) -> tuple[bool, bool]:
+    """(has_started, can_still_start) for a short-term or long-term request."""
+    if request.scheduled_at is not None:  # short-term: one start time
+        return request.scheduled_at <= now, request.scheduled_at > now
+    if request.start_date is not None and request.end_date is not None:  # long-term
+        today = now.date()
+        return request.start_date <= today, request.end_date >= today
+    return True, True
+
+
+def check_action(action: str, request, user_id: int, now) -> None:
+    """Raise RequestActionError unless this user may do this action right now."""
+    side, allowed_from, _new_status, past = REQUEST_ACTIONS[action]
+    owner_id = request.provider_id if side == "provider" else request.customer_id
+    if user_id != owner_id:
+        raise RequestActionError(403, f"Only the {side} can {action} a request.")
+    if request.status not in allowed_from:
+        allowed = " or ".join(status.value for status in allowed_from)
+        raise RequestActionError(
+            409,
+            f"A {request.status.value} request cannot be {past}. "
+            f"Only {allowed} requests can be {past}.",
+        )
+    has_started, can_still_start = request_timing(request, now)
+    if action == "accept" and not can_still_start:
+        raise RequestActionError(
+            400, "This request is out of date: the requested time has already passed."
+        )
+    if action == "complete" and not has_started:
+        raise RequestActionError(
+            400, "You can mark a request completed only after the service has started."
+        )
+
+
+def apply_action(db: Session, request: ServiceRequest, user_id: int, action: str) -> None:
+    """Check the rules, then change the status in one atomic UPDATE.
+
+    The UPDATE only matches if the status is still one the action may start from,
+    so two people clicking at the same moment cannot both win."""
+    check_action(action, request, user_id, datetime.now())
+    _side, allowed_from, new_status, _past = REQUEST_ACTIONS[action]
+    changed = (
+        db.query(ServiceRequest)
+        .filter(
+            ServiceRequest.id == request.id,
+            ServiceRequest.status.in_(allowed_from),
+        )
+        .update(
+            {"status": new_status, "updated_at": datetime.utcnow()},
+            synchronize_session=False,
+        )
+    )
+    db.commit()
+    if changed == 0:
+        raise RequestActionError(
+            409, "This request was just changed by someone else. Reload and try again."
+        )
+
+
+# ------------------------------------------------------- messaging (Step 10)
+
+MAX_MESSAGES_PER_REQUEST = 300
+# Chat is open only while the request is still alive. After it is closed,
+# completed, rejected or cancelled, the history stays readable but read-only.
+MESSAGING_OPEN_STATUSES = (RequestStatus.PENDING, RequestStatus.ACCEPTED)
+
+
+def can_send_message(request) -> bool:
+    return request.status in MESSAGING_OPEN_STATUSES
+
+
+def message_out(message, user_id: int) -> schemas.MessageOut:
+    return schemas.MessageOut(
+        id=message.id,
+        request_id=message.service_request_id,
+        sender_id=message.sender_id,
+        sender_name=message.sender.full_name,
+        is_mine=message.sender_id == user_id,
+        body=message.body,
+        created_at=message.created_at,
+    )
+
+
+def list_messages(
+    db: Session, request_id: int, after_id: int = 0, limit: int = MAX_MESSAGES_PER_REQUEST
+) -> list[Message]:
+    """Oldest first. Pass after_id=<last id you have> to get only newer ones."""
+    return (
+        db.query(Message)
+        .options(joinedload(Message.sender))
+        .filter(Message.service_request_id == request_id, Message.id > after_id)
+        .order_by(Message.id.asc())
+        .limit(limit)
+        .all()
+    )
+
+
+def count_messages(db: Session, request_id: int) -> int:
+    return (
+        db.query(func.count(Message.id))
+        .filter(Message.service_request_id == request_id)
+        .scalar()
+        or 0
+    )
+
+
+def create_message(db: Session, request_id: int, sender: User, body: str) -> Message:
+    message = Message(service_request_id=request_id, sender_id=sender.id, body=body)
+    db.add(message)
+    db.commit()
+    db.refresh(message)
+    message.sender = sender
+    return message
+
+
+def list_inbox(db: Session, user: User, page: int = 1, page_size: int = 20) -> list[schemas.InboxItemOut]:
+    """One row per request that has messages, most recent conversation first."""
+    stats = (
+        db.query(
+            Message.service_request_id.label("rid"),
+            func.max(Message.id).label("last_id"),
+            func.count(Message.id).label("n"),
+        )
+        .group_by(Message.service_request_id)
+        .subquery()
+    )
+    rows = (
+        db.query(ServiceRequest, stats.c.last_id, stats.c.n)
+        .join(stats, stats.c.rid == ServiceRequest.id)
+        .options(
+            joinedload(ServiceRequest.customer),
+            joinedload(ServiceRequest.provider),
+            joinedload(ServiceRequest.skill),
+        )
+        .filter(
+            or_(
+                ServiceRequest.customer_id == user.id,
+                ServiceRequest.provider_id == user.id,
+            )
+        )
+        .order_by(stats.c.last_id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    last_ids = [row[1] for row in rows]
+    last_messages = (
+        {m.id: m for m in db.query(Message).filter(Message.id.in_(last_ids)).all()}
+        if last_ids
+        else {}
+    )
+    return [inbox_item(request, count, last_messages[last_id], user.id) for request, last_id, count in rows]
+
+
+def inbox_item(request, count: int, last, user_id: int) -> schemas.InboxItemOut:
+    other = request.provider if request.customer_id == user_id else request.customer
+    text = last.body if len(last.body) <= 100 else last.body[:97] + "..."
+    return schemas.InboxItemOut(
+        request_id=request.id,
+        request_status=request.status,
+        skill_name=request.skill.name,
+        other_party=schemas.PartyOut(id=other.id, full_name=other.full_name, photo_url=other.photo_url),
+        message_count=count,
+        last_message=text,
+        last_message_at=last.created_at,
+        last_message_is_mine=last.sender_id == user_id,
     )

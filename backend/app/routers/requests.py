@@ -9,21 +9,15 @@ from app.security import get_current_user, require_customer
 router = APIRouter(prefix="/api/requests", tags=["requests"])
 
 
-@router.post(
-    "/regular",
-    response_model=schemas.RequestOut,
-    status_code=status.HTTP_201_CREATED,
-)
-def create_regular_request(
-    payload: schemas.RegularRequestCreate,
-    db: Session = Depends(get_db),
-    customer: User = Depends(require_customer),
-):
-    """Customer sends a long-term (REGULAR) request to one provider.
-
-    Example: a tutor for 3 months, Monday/Wednesday/Friday, 5 pm to 6:30 pm.
-    The request starts as PENDING. The provider answers it in the next step.
-    """
+def load_provider_for_request(
+    db: Session,
+    customer: User,
+    payload,
+    *,
+    refused_mode: ServiceMode,
+    refused_message: str,
+) -> User:
+    """Checks shared by long-term and short-term requests. Returns the provider."""
     provider = db.get(User, payload.provider_id)
     if (
         provider is None
@@ -34,10 +28,9 @@ def create_regular_request(
             status_code=status.HTTP_404_NOT_FOUND, detail="Provider not found."
         )
     profile = provider.provider_profile
-    if profile.service_mode == ServiceMode.NON_REGULAR:
+    if profile.service_mode == refused_mode:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This provider only takes short-term work.",
+            status_code=status.HTTP_400_BAD_REQUEST, detail=refused_message
         )
     if payload.skill_id not in {link.skill_id for link in profile.skills}:
         raise HTTPException(
@@ -60,6 +53,31 @@ def create_regular_request(
                 "requests. Wait for answers before sending more."
             ),
         )
+    return provider
+
+
+@router.post(
+    "/regular",
+    response_model=schemas.RequestOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_regular_request(
+    payload: schemas.RegularRequestCreate,
+    db: Session = Depends(get_db),
+    customer: User = Depends(require_customer),
+):
+    """Customer sends a long-term (REGULAR) request to one provider.
+
+    Example: a tutor for 3 months, Monday/Wednesday/Friday, 5 pm to 6:30 pm.
+    The request starts as PENDING. The provider answers it in the next step.
+    """
+    provider = load_provider_for_request(
+        db,
+        customer,
+        payload,
+        refused_mode=ServiceMode.NON_REGULAR,
+        refused_message="This provider only takes short-term work.",
+    )
     if crud.find_overlapping_regular_request(
         db,
         customer=customer,
@@ -72,8 +90,46 @@ def create_regular_request(
             status_code=status.HTTP_409_CONFLICT,
             detail="You already have an open request to this provider for these dates and skill.",
         )
-
     request = crud.create_regular_request(
+        db, customer=customer, provider=provider, data=payload
+    )
+    return crud.request_out(request)
+
+
+@router.post(
+    "/short-term",
+    response_model=schemas.RequestOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_short_term_request(
+    payload: schemas.ShortTermRequestCreate,
+    db: Session = Depends(get_db),
+    customer: User = Depends(require_customer),
+):
+    """Customer sends a one-off (NON_REGULAR) request to one provider.
+
+    Example: an electrician tomorrow at 10:00 for 2 hours.
+    The request starts as PENDING. The provider answers it in the next step.
+    """
+    provider = load_provider_for_request(
+        db,
+        customer,
+        payload,
+        refused_mode=ServiceMode.REGULAR,
+        refused_message="This provider only takes long-term work.",
+    )
+    if crud.find_same_day_short_term_request(
+        db,
+        customer=customer,
+        provider_id=provider.id,
+        skill_id=payload.skill_id,
+        day=payload.service_date,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You already have an open request to this provider for this skill on that day.",
+        )
+    request = crud.create_short_term_request(
         db, customer=customer, provider=provider, data=payload
     )
     return crud.request_out(request)
@@ -83,16 +139,19 @@ def create_regular_request(
 @router.get("/mine", response_model=list[schemas.RequestOut])
 def my_requests(
     status_filter: RequestStatus | None = Query(default=None, alias="status"),
+    page: int = Query(default=1, ge=1, le=1000),
+    page_size: int = Query(default=20, ge=1, le=50),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Customers: requests I sent. Providers: requests I received."""
+    """Request history, newest first. Customers: requests I sent.
+    Providers: requests I received. Filter with ?status=PENDING etc."""
     if current_user.role not in (UserRole.CUSTOMER, UserRole.PROVIDER):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have permission to do this.",
         )
-    rows = crud.list_my_requests(db, current_user, status_filter)
+    rows = crud.list_my_requests(db, current_user, status_filter, page, page_size)
     return [crud.request_out(row) for row in rows]
 
 
@@ -109,3 +168,61 @@ def get_request(
             status_code=status.HTTP_404_NOT_FOUND, detail="Request not found."
         )
     return crud.request_out(request)
+
+
+# ------------------------------------------------ status changes (Step 9)
+
+
+def change_status(
+    request_id: int, action: str, db: Session, user: User
+) -> schemas.RequestOut:
+    request = crud.get_request_for_party(db, request_id, user)
+    if request is None:  # not found, or it belongs to other people
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Request not found."
+        )
+    try:
+        crud.apply_action(db, request, user.id, action)
+    except crud.RequestActionError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+    return crud.request_out(crud.get_request_for_party(db, request_id, user))
+
+
+@router.post("/{request_id}/accept", response_model=schemas.RequestOut)
+def accept_request(
+    request_id: int = Path(ge=1),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Provider accepts a PENDING request. Both sides then see each other's contact details."""
+    return change_status(request_id, "accept", db, current_user)
+
+
+@router.post("/{request_id}/reject", response_model=schemas.RequestOut)
+def reject_request(
+    request_id: int = Path(ge=1),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Provider rejects a PENDING request."""
+    return change_status(request_id, "reject", db, current_user)
+
+
+@router.post("/{request_id}/complete", response_model=schemas.RequestOut)
+def complete_request(
+    request_id: int = Path(ge=1),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Provider marks an ACCEPTED request as done (only after the service has started)."""
+    return change_status(request_id, "complete", db, current_user)
+
+
+@router.post("/{request_id}/cancel", response_model=schemas.RequestOut)
+def cancel_request(
+    request_id: int = Path(ge=1),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Customer withdraws a PENDING or ACCEPTED request."""
+    return change_status(request_id, "cancel", db, current_user)
