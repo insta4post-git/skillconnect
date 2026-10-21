@@ -60,7 +60,7 @@ function renderNav() {
     links.push({ href: "/register.html", label: "Register", file: "register.html" });
   }
 
-  nav.innerHTML = "";
+  nav.replaceChildren();
   links.forEach((link) => {
     const a = document.createElement("a");
     a.href = link.href;
@@ -179,11 +179,19 @@ async function loadDashboard() {
   }
   try {
     const user = await api("/api/auth/me");
-    box.innerHTML = `
-      <p><strong>Name:</strong> ${user.full_name}</p>
-      <p><strong>Email:</strong> ${user.email}</p>
-      <p><strong>Role:</strong> ${user.role}</p>
-    `;
+    box.replaceChildren();
+    [
+      ["Name", user.full_name],
+      ["Email", user.email],
+      ["Role", user.role],
+    ].forEach(([label, value]) => {
+      const p = document.createElement("p");
+      const strong = document.createElement("strong");
+      strong.textContent = `${label}:`;
+      p.appendChild(strong);
+      p.appendChild(document.createTextNode(` ${value}`));
+      box.appendChild(p);
+    });
   } catch (error) {
     clearToken();
     window.location.href = "/login.html";

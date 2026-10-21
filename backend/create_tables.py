@@ -7,6 +7,8 @@ Run from the backend folder (venv active):
 Safe to run again: it only adds what is missing.
 """
 
+import re
+
 from sqlalchemy import inspect, text
 
 from app.database import Base, engine
@@ -24,26 +26,46 @@ def migrate_user_roles():
         )
 
 
+def safe_identifier(name):
+    """Table and column names cannot be sent as SQL parameters, so we only accept
+    plain names (letters, digits, underscore). They come from this file, never from users."""
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+        raise ValueError(f"Unsafe SQL name: {name!r}")
+    return name
+
+
+def safe_reference(reference):
+    """Same idea for a foreign key target written like 'locations (id)'."""
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*\s*\(\s*[A-Za-z_][A-Za-z0-9_]*\s*\)", reference):
+        raise ValueError(f"Unsafe SQL reference: {reference!r}")
+    return reference
+
+
 def add_column_if_missing(table, column, definition):
     """create_all() never changes existing tables, so we add new columns ourselves."""
+    safe_identifier(table)
+    safe_identifier(column)
     existing = {col["name"] for col in inspect(engine).get_columns(table)}
     if column in existing:
         return
     with engine.begin() as connection:
         connection.execute(
-            text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+            text(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")  # audit-ok: names validated above
         )
     print(f"Added column {table}.{column}")
 
 
 def add_foreign_key_if_missing(table, column, constraint, references):
     """Link table.column to another table's id (ON DELETE SET NULL)."""
+    for name in (table, column, constraint):
+        safe_identifier(name)
+    safe_reference(references)
     foreign_keys = inspect(engine).get_foreign_keys(table)
     if any(fk["constrained_columns"] == [column] for fk in foreign_keys):
         return
     with engine.begin() as connection:
         connection.execute(
-            text(
+            text(  # audit-ok: names validated above
                 f"ALTER TABLE {table} ADD CONSTRAINT {constraint} "
                 f"FOREIGN KEY ({column}) REFERENCES {references} "
                 "ON DELETE SET NULL"

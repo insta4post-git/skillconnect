@@ -30,24 +30,68 @@ def _blank_to_none(value):
 # ---------------------------------------------------------------- auth (Step 3)
 
 
+COMMON_PASSWORDS = {
+    "password", "password1", "password12", "password123", "12345678", "123456789",
+    "1234567890", "qwerty123", "qwertyuiop", "iloveyou", "admin123", "welcome123",
+    "abc12345", "letmein123", "11111111", "00000000", "skillconnect",
+    "skillconnect1", "skillconnect123",
+}
+
+
+def check_password_strength(password: str, email: str | None = None) -> str:
+    """At least 8 characters, one letter, one digit, not a famous weak password."""
+    if len(password.encode("utf-8")) > 72:
+        raise ValueError("Password is too long (max 72 bytes).")
+    if len(password) < 8:
+        raise ValueError("Password must be at least 8 characters.")
+    if not any(ch.isalpha() for ch in password) or not any(ch.isdigit() for ch in password):
+        raise ValueError("Password must contain at least one letter and one number.")
+    if password.lower() in COMMON_PASSWORDS or len(set(password)) < 3:
+        raise ValueError("This password is too common. Choose a different one.")
+    if email and password.lower() == email.split("@")[0].lower():
+        raise ValueError("Password must not be the same as your email name.")
+    return password
+
+
 class UserRegister(BaseModel):
     full_name: str = Field(min_length=2, max_length=120)
     email: EmailStr
     password: str = Field(min_length=8, max_length=72)
     role: Literal["CUSTOMER", "PROVIDER"]
-    phone: Optional[str] = Field(default=None, max_length=20)
+    phone: Optional[str] = Field(default=None, pattern=r"^\+?[0-9 \-]{7,20}$")
 
-    @field_validator("password")
+    @field_validator("full_name")
     @classmethod
-    def password_fits_bcrypt(cls, value: str) -> str:
-        if len(value.encode("utf-8")) > 72:
-            raise ValueError("Password is too long (max 72 bytes).")
+    def clean_name(cls, value: str) -> str:
+        value = " ".join(value.split())  # trim and collapse repeated spaces
+        if len(value) < 2 or not any(ch.isalpha() for ch in value):
+            raise ValueError("Please enter your real name (letters, at least 2 characters).")
         return value
+
+    @field_validator("email")
+    @classmethod
+    def lowercase_email(cls, value: str) -> str:
+        return value.strip().lower()
+
+    @field_validator("phone", mode="before")
+    @classmethod
+    def blank_phone_to_none(cls, value):
+        return _blank_to_none(value)
+
+    @model_validator(mode="after")
+    def strong_password(self):
+        check_password_strength(self.password, self.email)
+        return self
 
 
 class UserLogin(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(min_length=1, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def lowercase_email(cls, value: str) -> str:
+        return value.strip().lower()
 
 
 class TokenResponse(BaseModel):

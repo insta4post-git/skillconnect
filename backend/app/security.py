@@ -14,8 +14,8 @@ from app.models import User, UserRole
 load_dotenv()
 
 ACCESS_TOKEN_EXPIRE_MINUTES=30
-SECRET_KEY = os.getenv("SECRET_KEY", "").strip()
-if len(SECRET_KEY) < 32 or SECRET_KEY == "change_this_to_a_random_secret":
+SECRET_KEY = (os.environ.get("SECRET_KEY") or "").strip()
+if len(SECRET_KEY) < 32 or SECRET_KEY.startswith("change_this"):
     raise RuntimeError("Set a random SECRET_KEY (32+ chars) in backend/.env")
 ALGORITHM="HS256"
 bearer_scheme = HTTPBearer(auto_error=False)

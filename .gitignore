@@ -19,3 +19,6 @@ Thumbs.dbl.
 
 # Logs
 *.log
+
+backend/uploads/*
+!backend/uploads/.gitkeep
