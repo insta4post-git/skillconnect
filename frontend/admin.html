@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin - SkillConnect</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/ui2-extra.css">
+</head>
+<body>
+  <header class="site"><div class="container">
+    <a class="brand" href="/">SkillConnect</a>
+    <nav></nav>
+  </div></header>
+  <main><div class="container">
+    <h1>Admin panel</h1>
+    <p><a href="/dashboard.html">&larr; Dashboard</a></p>
+    <div class="tabs" id="admin-tabs"><button class="on" data-tab="users">Users</button><button data-tab="providers">Providers</button><button data-tab="requests">Requests</button><button data-tab="skills">Skills</button></div>
+    <form id="admin-search" class="toolbar"><input id="admin-q" type="search" maxlength="100" placeholder="Search..."><select id="admin-status"><option value="">All statuses</option><option>PENDING</option><option>ACCEPTED</option><option>COMPLETED</option><option>REJECTED</option><option>CANCELLED</option></select><button class="btn" type="submit">Search</button></form>
+    <div id="admin-table"></div>
+  </div></main>
+  <footer class="site">SkillConnect · college project</footer>
+  <script src="/js/app.js"></script>
+  <script src="/js/admin.js"></script>
+</body>
+</html>

@@ -1,49 +1,42 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Register · SkillConnect</title>
-    <link rel="stylesheet" href="/css/style.css" />
-  </head>
-  <body>
-    <header>
-      <a class="brand" href="/">SkillConnect</a>
-      <nav></nav>
-    </header>
-    <main>
-      <section class="card">
-        <h1>Create an account</h1>
-        <form id="register-form">
-          <label>
-            Full name
-            <input type="text" name="full_name" required minlength="2" />
-          </label>
-          <label>
-            Email
-            <input type="email" name="email" required />
-          </label>
-          <label>
-            Password (min 8 characters)
-            <input type="password" name="password" required minlength="8" />
-          </label>
-          <label>
-            Phone (optional)
-            <input type="text" name="phone" />
-          </label>
-          <label>
-            I am a
-            <select name="role" required>
-              <option value="CUSTOMER">Customer</option>
-              <option value="PROVIDER">Service provider</option>
-            </select>
-          </label>
-          <p id="form-error" class="form-error"></p>
-          <button type="submit">Register</button>
-        </form>
-        <p>Already have an account? <a href="/login.html">Login</a></p>
-      </section>
-    </main>
-    <script src="/js/app.js"></script>
-  </body>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Register - SkillConnect</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="site"><div class="container">
+    <a class="brand" href="/">SkillConnect</a>
+    <nav></nav>
+  </div></header>
+  <main><div class="container">
+    <div class="card form-card">
+      <h1>Create your account</h1>
+      <form id="register-form" novalidate>
+        <label for="full_name">Full name</label>
+        <input id="full_name" name="full_name" type="text" autocomplete="name" maxlength="120" required>
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" autocomplete="email" required>
+        <label for="phone">Phone (optional)</label>
+        <input id="phone" name="phone" type="tel" autocomplete="tel" placeholder="+91 98765 43210">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="new-password" maxlength="72" required>
+        <div class="hint">At least 8 characters with letters and a number. Avoid common passwords.</div>
+        <label for="role">I want to</label>
+        <select id="role" name="role">
+          <option value="CUSTOMER">Find services (Customer)</option>
+          <option value="PROVIDER">Offer my skills (Provider)</option>
+        </select>
+        <div id="form-error" class="form-error" role="alert"></div>
+        <button class="btn" type="submit">Create account</button>
+      </form>
+      <p class="small muted" style="text-align:center;margin-top:14px">Already registered? <a href="/login.html">Log in</a></p>
+    </div>
+  </div></main>
+  <footer class="site">SkillConnect · college project</footer>
+  <script src="/js/app.js"></script>
+
+</body>
 </html>

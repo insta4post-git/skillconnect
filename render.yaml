@@ -1,0 +1,29 @@
+# Render Blueprint: deploys the API and the frontend together (FastAPI serves ../frontend).
+services:
+  - type: web
+    name: skillconnect
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    # Tables and skills are created safely every start (the scripts can run many times).
+    startCommand: python create_tables.py && python seed_skills.py && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      # The values below are secrets: type them in the Render dashboard, they are not stored here.
+      - key: MYSQL_HOST
+        sync: false
+      - key: MYSQL_PORT
+        sync: false
+      - key: MYSQL_USER
+        sync: false
+      - key: MYSQL_PASSWORD
+        sync: false
+      - key: MYSQL_DATABASE
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false

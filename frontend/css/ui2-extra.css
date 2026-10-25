@@ -1,0 +1,49 @@
+/* UI-2 additions (linked from search.html and provider.html) */
+.filters { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); align-items: end; }
+.filters label { margin: 0 0 4px; font-size: .85rem; }
+.filters .check { display: flex; align-items: center; gap: 8px; font-weight: 500; margin: 0; padding-bottom: 10px; }
+.filters .check input { width: auto; }
+.provider-card { display: flex; gap: 14px; align-items: flex-start; }
+.provider-card .info { flex: 1; min-width: 0; }
+.avatar { width: 56px; height: 56px; border-radius: 50%; background: var(--primary-light); color: var(--primary); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.3rem; flex: none; overflow: hidden; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; }
+.avatar.big { width: 84px; height: 84px; font-size: 2rem; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.chip { background: var(--primary-light); color: var(--primary-dark); border-radius: 999px; padding: 2px 10px; font-size: .8rem; }
+.stars { color: #f59e0b; letter-spacing: 1px; }
+.pager { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 8px; }
+.profile-head { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+.review { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.review:last-child { border-bottom: 0; }
+.bar-row { display: flex; align-items: center; gap: 8px; font-size: .85rem; }
+.bar { flex: 1; height: 8px; background: var(--border); border-radius: 99px; overflow: hidden; }
+.bar > span { display: block; height: 100%; background: #f59e0b; }
+.tabs { display: flex; gap: 8px; margin-bottom: 4px; }
+.tabs button { flex: 1; padding: 8px; border: 1px solid var(--border); background: #fff; border-radius: 8px; font: inherit; cursor: pointer; }
+.tabs button.on { background: var(--primary); color: #fff; border-color: var(--primary); }
+.days { display: flex; flex-wrap: wrap; gap: 8px; }
+.days label { display: flex; align-items: center; gap: 4px; font-weight: 500; margin: 0; }
+.days input { width: auto; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.notice.ok { background: var(--ok-bg); color: var(--ok); }
+
+/* UI-3 / UI-4 additions */
+.inbox-item { display: block; padding: 10px; border-bottom: 1px solid var(--border); color: var(--text); }
+.inbox-item:hover { background: var(--primary-light); text-decoration: none; }
+.inbox-item.on { background: var(--primary-light); border-left: 3px solid var(--primary); }
+.chat-layout { display: grid; grid-template-columns: 300px 1fr; gap: 16px; }
+#thread { height: 380px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 4px; background: var(--bg); border-radius: 8px; }
+.bubble { max-width: 80%; padding: 8px 12px; border-radius: 12px; background: #fff; border: 1px solid var(--border); align-self: flex-start; white-space: pre-wrap; overflow-wrap: anywhere; }
+.bubble.mine { align-self: flex-end; background: var(--primary-light); border-color: #bfdbfe; }
+.send-row { display: flex; gap: 8px; margin-top: 10px; }
+.send-row input { flex: 1; }
+.slot { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.slot select, .slot input { width: auto; flex: 1; min-width: 110px; }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; background: #fff; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th { background: var(--primary-light); }
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+.toolbar input, .toolbar select { width: auto; flex: 1; min-width: 160px; }
+.toolbar .btn { width: auto; }
+@media (max-width: 720px) { .chat-layout { grid-template-columns: 1fr; } }

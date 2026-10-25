@@ -1,142 +1,91 @@
 # SkillConnect
 
-Location-based service marketplace. Connects people who **have** a skill with people who **need** that skill.
+A location-based service marketplace. **Providers** (electricians, tutors, plumbers, beauticians...) list their skills; **customers** search by skill and location, send a request, chat, and review the provider after the job.
 
-This is the SkillConnect MVP. Step 2 adds the MySQL table structure.
+**Live demo:** _add your Render link here after deployment_ (first load may take about a minute, free hosting sleeps)
+**Source:** _add your GitHub link here_
 
-## Stack
+## Features
+- Sign-up and login for customers, providers and an admin; JWT login, strong-password rules, login rate limit
+- Profiles with city and photo; provider skills, weekly availability and pricing
+- Search by skill, category, city, minimum rating and "near me"
+- Requests: one-time and regular (long-term); accept, reject, complete, cancel
+- Chat per request; phone and email are shared only after the provider accepts
+- Ratings and reviews after a completed job, shown on the provider's public profile
+- Separate dashboards for customer, provider and admin; admin panel for users, providers, requests and skills
 
-- Frontend: HTML, CSS, vanilla JavaScript
-- Backend: Python, FastAPI
-- Database: MySQL (SQLAlchemy + PyMySQL)
-- Auth (later): JWT
+## Technology stack
+| Part | Technology |
+|---|---|
+| Frontend | HTML, CSS, vanilla JavaScript |
+| Backend | Python, FastAPI, Pydantic |
+| Database | MySQL, SQLAlchemy ORM, PyMySQL |
+| Security | bcrypt password hashing, JWT (PyJWT), role-based access |
+| Docs and testing | Swagger (`/docs`), `scripts/audit_project.py`, `scripts/smoke_test.py` |
+| Hosting | Render (app) + Aiven (MySQL), GitHub |
 
 ## Project structure
-
 ```
-skillconnect/
-├── backend/
-│   ├── app/
-│   │   ├── main.py
-│   │   ├── database.py
-│   │   ├── models.py
-│   │   ├── schemas.py
-│   │   ├── crud.py
-│   │   ├── security.py
-│   │   └── routers/
-│   ├── create_database.py
-│   ├── create_tables.py
-│   ├── .env.example
-│   ├── .env
-│   └── requirements.txt
-├── frontend/
-│   ├── index.html
-│   ├── login.html
-│   ├── register.html
-│   ├── search.html
-│   ├── provider.html
-│   ├── dashboard.html
-│   ├── css/style.css
-│   └── js/app.js
-├── .gitignore
+SkillConnect/
+├── frontend/      HTML pages, css/, js/
+├── backend/       FastAPI app (app/), create_*.py, seed_*.py, scripts/
+├── database/      schema.sql (reference copy of the tables)
+├── docs/          architecture, ER diagram, database, API, deployment, screenshots
+├── render.yaml    deployment settings
+├── .env.example   settings template (the real .env is never committed)
 └── README.md
 ```
 
-## Setup (Windows PowerShell)
+## Documentation
+- [Architecture](docs/ARCHITECTURE.md)
+- [ER diagram and request flow](docs/ER_DIAGRAM.md)
+- [Database schema](docs/DATABASE.md) and [schema.sql](database/schema.sql)
+- [API documentation](docs/API.md) (live: `/docs`)
+- [Deployment guide](docs/DEPLOYMENT.md)
+- [Screenshot list](docs/SCREENSHOTS.md)
 
-### 1. Fill secrets
+## Screenshots
+| | |
+|---|---|
+| ![Home](docs/screenshots/01-home.png) | ![Search](docs/screenshots/02-search.png) |
+| ![Provider](docs/screenshots/03-provider-profile.png) | ![Chat](docs/screenshots/06-chat.png) |
+| ![Customer dashboard](docs/screenshots/07-customer-dashboard.png) | ![Admin](docs/screenshots/09-admin.png) |
 
-Open `backend/.env` and replace:
-
-- `MYSQL_PASSWORD=your_mysql_password_here` with your MySQL `root` password
-- optionally `SECRET_KEY` with any random string (used later for JWT)
-
-Do not commit `.env`. Use `.env.example` as the template for GitHub.
-
-### 2. Python virtual environment
-
+## Installation (Windows, PowerShell)
+Needs Python 3.11+ and MySQL 8.
 ```powershell
-cd "C:\Users\Shweta Sah\skillconnect\backend"
+git clone https://github.com/YOUR-NAME/SkillConnect.git
+cd SkillConnect\backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-```
-
-If Activate is blocked, run:
-
-```powershell
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-```
-
-Then activate again.
-
-### 3. Create the MySQL database
-
-MySQL Server 8.0 should already be running (`MySQL80`). After the password is in `.env`:
-
-```powershell
+Copy-Item ..\.env.example .env      # open backend\.env and fill in your values
 python create_database.py
-```
-
-Expected: `Database 'skillconnect' is ready.`
-
-Then create tables:
-
-```powershell
 python create_tables.py
-```
-
-Expected: a list of tables (`users`, `provider_profiles`, `skills`, `categories`, `locations`, `service_requests`, `availability`, `messages`, `reviews`, and junction table `provider_skills`).
-
-### 4. Start the app
-
-From the `backend` folder, with the venv active:
-
-```powershell
+python seed_skills.py
+python create_admin.py              # creates the admin account
+python seed_demo.py                 # optional demo providers, customers and reviews
 uvicorn app.main:app --reload
 ```
+Open http://127.0.0.1:8000 (API docs: http://127.0.0.1:8000/docs).
 
-Then open:
+Generate the `SECRET_KEY` with `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
 
-- Frontend: http://127.0.0.1:8000/
-- Swagger: http://127.0.0.1:8000/docs
-- Health: http://127.0.0.1:8000/api/health
-- Register: http://127.0.0.1:8000/register.html
-- Login: http://127.0.0.1:8000/login.html
-
-Auth endpoints (Swagger):
-
-- `POST /api/auth/register`
-- `POST /api/auth/login`
-- `GET /api/auth/me` (Bearer token)
-- `POST /api/auth/logout` (Bearer token)
-
-Public signup roles are **CUSTOMER** and **PROVIDER** only. Admin accounts are created with:
-
+## Testing
 ```powershell
-python create_admin.py
+python scripts\audit_project.py   # security audit (no server needed)
+python scripts\smoke_test.py      # end-to-end test (server must be running)
 ```
 
-after setting `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `backend/.env`. Then run `python create_tables.py` once so MySQL accepts the `ADMIN` role.
+## Security
+bcrypt password hashing, JWT with expiry and fixed algorithm, role checks on the server for every request, users can only open their own requests and chats, input validation with Pydantic, SQL only through the ORM (bound parameters), user text shown with `textContent` (no XSS), CORS and security headers, login/register rate limit, secrets only in `.env`.
 
-## Git / GitHub
+## Demo flow (5 minutes)
+1. Search "electrician", open a provider (rating, reviews, no phone/email).
+2. Register a customer, send a one-time request.
+3. Log in as the provider: accept it, chat.
+4. After the job time: mark completed, then the customer reviews; the rating appears on the profile.
+5. Log in as admin: dashboard numbers, users, requests, skills.
 
-This repo includes `.gitignore`, `.env.example`, and this README.
-
-Git was not found on PATH on this machine. Install [Git for Windows](https://git-scm.com/download/win), then:
-
-```powershell
-cd "C:\Users\Shweta Sah\skillconnect"
-git init
-git add .
-git commit -m "Step 1: SkillConnect project foundation"
-```
-
-Create a GitHub repository later and push. Never add `.env` (it is already ignored).
-
-## Step 1 expected results
-
-- FastAPI starts without crashing
-- Home page loads
-- `/api/health` returns `"status": "ok"`
-- After `.env` password + `create_database.py`, health shows `"database_connected": true`
+## Future scope
+Real-time chat (WebSockets), online payments, email/SMS notifications, map-based search, provider verification, edit/delete reviews, account deactivation, cloud storage for photos, a mobile app.
